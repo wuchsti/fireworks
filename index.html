@@ -29,7 +29,7 @@
     overflow:hidden; -webkit-user-select:none; user-select:none;
     touch-action:manipulation;
   }
-  #sky{ position:fixed; inset:0; display:block; }
+  #sky{ position:fixed; inset:0; display:block; touch-action:none; }
 
   .brand{
     position:fixed; top:max(14px, env(safe-area-inset-top)); left:max(14px, env(safe-area-inset-left));
@@ -67,6 +67,7 @@
   }
   .fw-btn .ico{ font-size:26px; filter:drop-shadow(0 0 6px var(--c)); line-height:1; }
   .fw-btn:active{ transform:scale(.88); }
+  .fw-btn.active{ box-shadow:0 0 0 3px var(--c), 0 4px 14px rgba(0,0,0,.4); }
 
   .fw-btn.finale{
     width:90px; height:90px; border:none;
@@ -95,7 +96,9 @@
     <button class="fw-btn" data-shape="heart"  data-hue="328" style="--c:var(--pink)" aria-label="Herz-Rakete starten"><span class="ico">💖</span><span>Herz</span></button>
     <button class="fw-btn" data-shape="willow" data-hue="140" style="--c:var(--green)" aria-label="Grüne Weiden-Rakete starten"><span class="ico">🍃</span><span>Weide</span></button>
     <button class="fw-btn" id="batteryBtn" style="--c:var(--accent)" aria-label="Batterie zünden – viele Schüsse hintereinander"><span class="ico">🎇</span><span>Batterie</span></button>
+    <button class="fw-btn" id="romanBtn" style="--c:var(--accent)" aria-label="Römisches Licht zünden – mehrere Bälle hintereinander"><span class="ico">🧨</span><span>Röm. Licht</span></button>
     <button class="fw-btn" id="beeBtn" style="--c:var(--gold)" aria-label="Biene zünden"><span class="ico">🐝</span><span>Bienen</span></button>
+    <button class="fw-btn" id="sparklerBtn" style="--c:var(--gold)" aria-label="Wunderkerze halten und über den Himmel ziehen"><span class="ico">✨</span><span>Wunderkerze</span></button>
     <button class="fw-btn finale" id="finaleBtn" aria-label="Großes Finale starten"><span class="ico">🌈</span><span>Finale</span></button>
   </div>
 
@@ -295,7 +298,17 @@
     else if (shape === 'star') burstStar(cx, cy, hue);
     else if (shape === 'heart') burstHeart(cx, cy, hue);
     else if (shape === 'willow') burstWillow(cx, cy, hue);
+    else if (shape === 'pop') burstPop(cx, cy, hue);
     else burstCircle(cx, cy, hue);
+  }
+
+  function burstPop(cx, cy, hue){
+    var count = 20;
+    for (var i = 0; i < count; i++){
+      var ang = rand(0, Math.PI * 2), speed = rand(55, 110);
+      particles.push(new Particle(cx, cy, Math.cos(ang) * speed, Math.sin(ang) * speed,
+        hue + rand(-8, 8), 90, rand(58, 72), rand(1.6, 2.4), rand(0.45, 0.7), { gravity: 240, drag: 1.1 }));
+    }
   }
 
   function burstCircle(cx, cy, hue){
@@ -429,9 +442,11 @@
   };
 
   // ---------- Launching ----------
-  function launchRocket(x, hue, shape){
+  function launchRocket(x, hue, shape, apexMin, apexMax){
+    if (apexMin == null) apexMin = 0.16;
+    if (apexMax == null) apexMax = 0.42;
     var groundY = height - GROUND_H;
-    var targetY = rand(height * 0.16, height * 0.42);
+    var targetY = rand(height * apexMin, height * apexMax);
     rockets.push(new Rocket(x, groundY, targetY, hue, shape));
     playWhoosh();
   }
@@ -445,6 +460,19 @@
           var x = rand(width * 0.2, width * 0.8);
           launchRocket(x, rand(0, 360), choice(shapes));
         }, i * 170);
+      })(i);
+    }
+  }
+
+  function fireRomanCandle(){
+    var padX = choice(pads).x;
+    var n = 6;
+    var hueBase = rand(0, 360);
+    for (var i = 0; i < n; i++){
+      (function(i){
+        setTimeout(function(){
+          launchRocket(padX + rand(-4, 4), (hueBase + i * 22) % 360, 'pop', 0.55, 0.72);
+        }, i * 380 + rand(0, 70));
       })(i);
     }
   }
@@ -487,7 +515,8 @@
   function playBoom(shape){
     if (muted || !audioCtx) return;
     var t = audioCtx.currentTime;
-    var bufferSize = Math.floor(audioCtx.sampleRate * 0.5);
+    var dur = shape === 'pop' ? 0.22 : 0.5;
+    var bufferSize = Math.floor(audioCtx.sampleRate * dur);
     var buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
     var data = buffer.getChannelData(0);
     for (var i = 0; i < bufferSize; i++){
@@ -495,11 +524,29 @@
     }
     var noise = audioCtx.createBufferSource(); noise.buffer = buffer;
     var filter = audioCtx.createBiquadFilter(); filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(shape === 'willow' ? 500 : 950, t);
-    filter.frequency.exponentialRampToValueAtTime(100, t + 0.4);
+    var startFreq = shape === 'willow' ? 500 : (shape === 'pop' ? 1500 : 950);
+    filter.frequency.setValueAtTime(startFreq, t);
+    filter.frequency.exponentialRampToValueAtTime(shape === 'pop' ? 300 : 100, t + dur * 0.8);
     var gain = audioCtx.createGain();
-    gain.gain.setValueAtTime(0.5, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+    gain.gain.setValueAtTime(shape === 'pop' ? 0.32 : 0.5, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.9);
+    noise.connect(filter); filter.connect(gain); gain.connect(audioCtx.destination);
+    noise.start(t);
+  }
+
+  function playCrackle(){
+    if (muted || !audioCtx) return;
+    var t = audioCtx.currentTime;
+    var bufferSize = Math.floor(audioCtx.sampleRate * 0.04);
+    var buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    var data = buffer.getChannelData(0);
+    for (var i = 0; i < bufferSize; i++){ data[i] = Math.random() * 2 - 1; }
+    var noise = audioCtx.createBufferSource(); noise.buffer = buffer;
+    var filter = audioCtx.createBiquadFilter(); filter.type = 'highpass';
+    filter.frequency.setValueAtTime(rand(2500, 5000), t);
+    var gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(rand(0.04, 0.09), t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
     noise.connect(filter); filter.connect(gain); gain.connect(audioCtx.destination);
     noise.start(t);
   }
@@ -542,12 +589,83 @@
   });
 
   document.getElementById('batteryBtn').addEventListener('click', function(){ ensureAudio(); fireBattery(); });
+  document.getElementById('romanBtn').addEventListener('click', function(){ ensureAudio(); fireRomanCandle(); });
   document.getElementById('beeBtn').addEventListener('click', function(){
     ensureAudio();
     bees.push(new Bee(rand(width * 0.3, width * 0.7), height - GROUND_H));
     playBuzz();
   });
   document.getElementById('finaleBtn').addEventListener('click', function(){ ensureAudio(); grandFinale(); });
+
+  // ---------- Wunderkerze (sparkler, held & dragged) ----------
+  var sparklerBtn = document.getElementById('sparklerBtn');
+  var sparklerMode = false, sparklerActive = false;
+  var sparklerPos = { x: 0, y: 0 };
+  var crackleTimer = null;
+
+  function startCrackle(){
+    if (crackleTimer) return;
+    (function tick(){
+      playCrackle();
+      crackleTimer = setTimeout(tick, rand(45, 100));
+    })();
+  }
+  function stopCrackle(){
+    if (crackleTimer){ clearTimeout(crackleTimer); crackleTimer = null; }
+  }
+
+  sparklerBtn.addEventListener('click', function(){
+    ensureAudio();
+    sparklerMode = !sparklerMode;
+    sparklerBtn.classList.toggle('active', sparklerMode);
+    if (!sparklerMode){ sparklerActive = false; stopCrackle(); }
+  });
+
+  function updateSparklerPos(e){
+    var rect = canvas.getBoundingClientRect();
+    sparklerPos.x = e.clientX - rect.left;
+    sparklerPos.y = e.clientY - rect.top;
+  }
+
+  canvas.addEventListener('pointerdown', function(e){
+    if (!sparklerMode) return;
+    sparklerActive = true;
+    updateSparklerPos(e);
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+    startCrackle();
+    e.preventDefault();
+  });
+  canvas.addEventListener('pointermove', function(e){
+    if (sparklerActive) updateSparklerPos(e);
+  });
+  window.addEventListener('pointerup', function(){
+    if (sparklerActive){ sparklerActive = false; stopCrackle(); }
+  });
+
+  function drawSparkler(){
+    if (!sparklerActive) return;
+    for (var i = 0; i < 7; i++){
+      var ang = rand(0, Math.PI * 2), speed = rand(20, 90);
+      var kind = choice(['gold', 'white', 'blue']);
+      var hue = kind === 'gold' ? 42 : (kind === 'blue' ? 200 : 40);
+      var sat = kind === 'white' ? 15 : 85;
+      var light = kind === 'white' ? 92 : 70;
+      particles.push(new Particle(sparklerPos.x, sparklerPos.y, Math.cos(ang) * speed, Math.sin(ang) * speed - 10,
+        hue, sat, light, rand(0.9, 1.6), rand(0.25, 0.5), { gravity: 180, drag: 2.3, twinkle: true }));
+    }
+    ctx.save();
+    ctx.strokeStyle = '#6b5a46';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(sparklerPos.x + 14, sparklerPos.y + 34);
+    ctx.lineTo(sparklerPos.x, sparklerPos.y);
+    ctx.stroke();
+    ctx.fillStyle = '#fff6d8';
+    ctx.shadowColor = '#fff6d8';
+    ctx.shadowBlur = 16;
+    ctx.beginPath(); ctx.arc(sparklerPos.x, sparklerPos.y, 3.2, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
 
   // ---------- Main loop ----------
   var last = performance.now();
@@ -568,6 +686,8 @@
       bees[b].draw();
       if (!alive) bees.splice(b, 1);
     }
+
+    drawSparkler();
 
     for (var p = particles.length - 1; p >= 0; p--){
       if (!particles[p].update(dt)) particles.splice(p, 1);
